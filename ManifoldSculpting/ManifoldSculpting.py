@@ -1,8 +1,6 @@
 import numpy as np
-from sklearn.neighbors import KDTree
-import queue
 from numba.experimental import jitclass
-from numba import int32,float32
+from numba import int32,float32,boolean
 
 specs = [('k',int32),
          ('n_dim',int32),
@@ -15,62 +13,78 @@ specs = [('k',int32),
          ('delta0',float32[:,:]),
          ('theta0',float32[:,:]),
          ('delta_ave',float32),
+         ('learning_rate',float32),
+         ('scale_factor',float32),
          ('d_pres',int32[:]),
-         ('d_scal',int32[:])
+         ('d_scal',int32[:]),
+         ('rotate',boolean),
+         ('elapsed_epochs',int32)
          ]
 
 @jitclass(specs)
 class ManifoldSculpting():
     # general note: might want to pass the data to all functions
     # instead of using self.pca_data
-    def __init__(self, k=5, n_dim = 2, niter = 100, sigma = 0.99):
+    def __init__(self, k=5, n_dim = 2, niter = 100, sigma = 0.99, rotate = True):
 
         self.k = k
         self.n_dim = n_dim
         self.niter = niter
         self.sigma = sigma
+        self.rotate = rotate
+
+        self.scale_factor = 1
 
     def fit(self,data):
         self.data = data
         # find neighbours, distances and angles
         self.neighbours, self.delta0, self.delta_ave, self.colinear, self.theta0 = self._compute_neighbourhood()
-        
+        self.learning_rate = self.delta_ave
+
         # PCA step
-        self.pca_data = self._pca()
-        self.d_pres = np.array(list(range(self.n_dim)),dtype=np.int32)
-        self.d_scal = np.array(list(range(self.n_dim,self.data.shape[1])),dtype=np.int32)
+        if self.rotate:
+            self.pca_data = self._pca()
+            self.d_pres = np.array(list(range(self.n_dim)),dtype=np.int32)
+            self.d_scal = np.array(list(range(self.n_dim,self.data.shape[1])),dtype=np.int32)
+        else:
+            cov = np.cov(self.data.T)
+            most_important = np.argsort(-np.diag(cov)).astype(np.int32)
+            self.d_pres = most_important[:self.n_dim]
+            self.d_scal = most_important[self.n_dim:]
+            self.pca_data = np.copy(self.data)
+        print('keeping',self.d_pres)
 
-        # adjust variables for given number of iterations
-        for iter in range(self.niter):
-            # get the origin for the breadth first adjust
-            origin = np.random.choice(np.array(list(range(self.data.shape[0])),dtype=np.int32))
 
-            # q = queue.Queue()
-            q = []
-            q.append(origin)
-            visited = []
 
-            # scale the unwanted dimensions
-            self.pca_data[:,self.d_scal] *= self.sigma
-            # scale the preserved dimensions to preserve average distance.
-            # (unclear when this is stated in the paper but authors fo this)
-            while self._avg_neighbour_distance() < self.delta_ave:
-                self.pca_data[:,self.d_pres] /= self.sigma
+        # adjust variables for a bunch of times to get to a
+        # reasonable point to start comparing errors
+        epoch = 1
+        while self.scale_factor > 0.01:
+            mean_error = self._step()
+            epoch += 1
+            print(epoch, mean_error,self.learning_rate)
 
-            # iterate over items in queue
-            while q:
-                # get the next point in queue and skip it if already adjusted
-                p = q.pop(0)
-                if p in visited:
-                    continue
+        
+        epochs_since_improvement = 0
+        best_error = np.inf
+        
+        # adjust variables until error does not change or reached max iterations
+        while (epoch < self.niter) and (epochs_since_improvement < 50):
+            
+            self._step()
 
-                # print(f'\rit:{iter}, p:{p}')
-                # enqueue all the point's neighbours
-                for n in self.neighbours[p]:
-                    q.append(n)
+            if mean_error < best_error:
+                best_error = mean_error
+                epochs_since_improvement = 0
+            else:
+                epochs_since_improvement += 1
 
-                self._adjust_point(p,visited)
-                visited.append(p)
+            epoch += 1
+
+            print(epoch, mean_error,self.learning_rate)
+
+        self.elapsed_epochs = epoch
+        print(epoch, epochs_since_improvement,best_error)
 
     def compute_error(self,p,visited):
         w = np.zeros(self.k)
@@ -106,12 +120,7 @@ class ManifoldSculpting():
             (neighbours, distances, average distance, colinear points, angle)
         """
         N = self.data.shape[0]
-        # find the kNN using kdtree
-        # tree = KDTree(self.data)
-        # _dist, _neigh = tree.query(self.data, self.k+1)
-        # _dist = _dist[:,1:]
-        # _neigh = _neigh[:,1:]
-
+       
         x2 = np.sum(self.data*self.data,axis = 1)
         data_t = self.data.T
         xx = self.data@data_t
@@ -182,10 +191,12 @@ class ManifoldSculpting():
         return dist
     
     def _adjust_point(self,p,visited):
-        lr = self.delta_ave * 0.4
+        lr = self.learning_rate * np.random.uniform(0.6,1)
         improved = True
 
-        while improved:
+        s = 0
+        while (s<30) and improved:
+            s+=1
             improved = False
             err = self.compute_error(p,visited)
 
@@ -202,3 +213,55 @@ class ManifoldSculpting():
                     self.pca_data[p,d] += lr
                 else:
                     improved = True
+        return s-1, err
+    
+    def _step(self):
+        # get the origin for the breadth first adjust
+        origin = np.random.choice(np.array(list(range(self.data.shape[0])),dtype=np.int32))
+
+        q = []
+        q.append(origin)
+        visited = []
+
+        self.scale_factor *= self.sigma
+        # scale down the unwanted dimensions
+        self.pca_data[:,self.d_scal] *= self.scale_factor
+        # scale up the preserved dimensions to preserve average distance.
+        # (unclear when this is stated in the paper but authors fo this)
+        while self._avg_neighbour_distance() < self.delta_ave:
+            self.pca_data[:,self.d_pres] /= self.scale_factor
+
+
+        step = 0
+        mean_error = 0
+        counter = 0 # should be the number of points at the end of loop
+
+        # iterate over items in queue
+        while q:
+            # get the next point in queue and skip it if already adjusted
+            p = q.pop(0)
+            if p in visited:
+                continue
+
+            # print(f'\rit:{iter}, p:{p}')
+            # enqueue all the point's neighbours
+            for n in self.neighbours[p]:
+                q.append(n)
+
+            s,err = self._adjust_point(p,visited)
+            step += s
+            mean_error += err
+            counter += 1
+            visited.append(p)
+
+        mean_error /= counter
+
+        # if not many improvements, reduce lr.
+        # if many steps, increase lr.
+        # note: values are from the authors' implementation, no clue why they are like this
+        if step < self.pca_data.shape[0]:
+            self.learning_rate *= 0.87
+        else:
+            self.learning_rate /= 0.91
+
+        return mean_error
