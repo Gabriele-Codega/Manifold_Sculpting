@@ -8,18 +8,18 @@ specs = [('k',int32),
          ('n_dim',int32),
          ('niter',int32),
          ('sigma',float32),
-         ('data',float32[:]),
-         ('pca_data',float32[:]),
-         ('neighbours',int32[:]),
-         ('colinear',int32[:]),
-         ('delta0',float32[:]),
-         ('theta0',float32[:]),
+         ('data',float32[:,:]),
+         ('pca_data',float32[:,:]),
+         ('neighbours',int32[:,:]),
+         ('colinear',int32[:,:]),
+         ('delta0',float32[:,:]),
+         ('theta0',float32[:,:]),
          ('delta_ave',float32),
          ('d_pres',int32[:]),
          ('d_scal',int32[:])
          ]
 
-# @jitclass(specs)
+@jitclass(specs)
 class ManifoldSculpting():
     # general note: might want to pass the data to all functions
     # instead of using self.pca_data
@@ -37,16 +37,17 @@ class ManifoldSculpting():
         
         # PCA step
         self.pca_data = self._pca()
-        self.d_pres = list(range(self.n_dim))
-        self.d_scal = list(range(self.n_dim,self.data.shape[1]))
+        self.d_pres = np.array(list(range(self.n_dim)),dtype=np.int32)
+        self.d_scal = np.array(list(range(self.n_dim,self.data.shape[1])),dtype=np.int32)
 
         # adjust variables for given number of iterations
         for iter in range(self.niter):
             # get the origin for the breadth first adjust
             origin = np.random.choice(np.array(list(range(self.data.shape[0])),dtype=np.int32))
 
-            q = queue.Queue()
-            q.put(origin)
+            # q = queue.Queue()
+            q = []
+            q.append(origin)
             visited = []
 
             # scale the unwanted dimensions
@@ -57,16 +58,16 @@ class ManifoldSculpting():
                 self.pca_data[:,self.d_pres] /= self.sigma
 
             # iterate over items in queue
-            while not q.empty():
+            while q:
                 # get the next point in queue and skip it if already adjusted
-                p = q.get()
+                p = q.pop(0)
                 if p in visited:
                     continue
 
-                print(f'\rit:{iter}, p:{p}',sep=' ',end='',flush=True)
+                # print(f'\rit:{iter}, p:{p}')
                 # enqueue all the point's neighbours
                 for n in self.neighbours[p]:
-                    q.put(n)
+                    q.append(n)
 
                 self._adjust_point(p,visited)
                 visited.append(p)
@@ -87,7 +88,7 @@ class ManifoldSculpting():
             b = self.pca_data[c] - self.pca_data[n]
             la = np.linalg.norm(a)
             lb = np.linalg.norm(b)
-            theta = np.arccos(np.clip(np.dot(a,b)/(la*lb),-1,1))
+            theta = np.arccos(np.minimum(1,np.maximum(np.dot(a,b)/(la*lb),-1)))
 
             err_dist = 0.5*(la-self.delta0[p,i])/self.delta_ave
             err_theta = (theta-self.theta0[p,i])/np.pi
@@ -106,14 +107,25 @@ class ManifoldSculpting():
         """
         N = self.data.shape[0]
         # find the kNN using kdtree
-        tree = KDTree(self.data)
-        _dist, _neigh = tree.query(self.data, self.k+1)
-        _dist = _dist[:,1:]
-        _neigh = _neigh[:,1:]
+        # tree = KDTree(self.data)
+        # _dist, _neigh = tree.query(self.data, self.k+1)
+        # _dist = _dist[:,1:]
+        # _neigh = _neigh[:,1:]
+
+        x2 = np.sum(self.data*self.data,axis = 1)
+        data_t = self.data.T
+        xx = self.data@data_t
+        dist = np.sqrt(np.abs(x2.reshape((-1,1))-2*xx+x2))
+
+        _neigh = np.zeros((N,self.k),dtype=np.int32)
+        _dist = np.zeros((N,self.k),dtype=np.float32)
+        for i in range(N):
+            _neigh[i] = np.argsort(dist[i])[1:self.k+1]
+            _dist[i,:] = dist[i,_neigh[i]]
 
         # find the most colinear point for each point-neighbour pair
-        _colinear = np.zeros((N,self.k))
-        _theta = np.zeros_like(_colinear)
+        _colinear = np.zeros((N,self.k),dtype=np.int32)
+        _theta = np.zeros((N,self.k),dtype=np.float32)
         # iterate over all points
         for i in range(N):
             # for each point iterate over neighbours
@@ -127,7 +139,7 @@ class ManifoldSculpting():
                 for nk,k in enumerate(_neigh[j]):
                     b = self.data[k] - self.data[j]
                     lb = np.linalg.norm(b)
-                    angles[nk] = np.arccos(np.clip(np.dot(a,b)/(la*lb),-1,1))
+                    angles[nk] = np.arccos(np.minimum(1, np.maximum(np.dot(a,b)/(la*lb), -1)))
 
                 # choose the point such that the angle is the closest to pi
                 index = np.argmin(np.abs(angles-np.pi))
@@ -155,7 +167,7 @@ class ManifoldSculpting():
         cov = np.cov(self.data.T)
         eigval,eigvec = np.linalg.eig(cov)
         index = np.argsort(-eigval)
-        eigvec = eigvec[:,index]
+        eigvec = eigvec[:,index].astype(np.float32)
 
         return self.data@eigvec
     
