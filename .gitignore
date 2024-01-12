@@ -4,3 +4,5 @@ figs/
 
 pres.md
 *.ipynb
+
+.DS_Store
