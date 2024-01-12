@@ -1,6 +1,6 @@
 import numpy as np
 from numba.experimental import jitclass
-from numba import int32,float32,boolean
+from numba import int32,float32,boolean,objmode
 
 specs = [('k',int32),
          ('n_dim',int32),
@@ -8,6 +8,7 @@ specs = [('k',int32),
          ('sigma',float32),
          ('data',float32[:,:]),
          ('pca_data',float32[:,:]),
+         ('best_data',float32[:,:]),
          ('neighbours',int32[:,:]),
          ('colinear',int32[:,:]),
          ('delta0',float32[:,:]),
@@ -15,17 +16,37 @@ specs = [('k',int32),
          ('delta_ave',float32),
          ('learning_rate',float32),
          ('scale_factor',float32),
+         ('last_error',float32),
+         ('best_error',float32),
          ('d_pres',int32[:]),
          ('d_scal',int32[:]),
          ('rotate',boolean),
-         ('elapsed_epochs',int32)
+         ('elapsed_epochs',int32),
+         ('patience',int32)
          ]
 
 @jitclass(specs)
 class ManifoldSculpting():
     # general note: might want to pass the data to all functions
     # instead of using self.pca_data
-    def __init__(self, k=5, n_dim = 2, niter = 100, sigma = 0.99, rotate = True):
+    def __init__(self, k=5, n_dim = 2, niter = 100, sigma = 0.99, rotate = True, patience = 30):
+        """Manifold sculpting class
+
+        Parameters
+        ----------
+        k : int, optional
+            number of neighbours, by default 5
+        n_dim : int, optional
+            dimension of the embedding space, by default 2
+        niter : int, optional
+            maximum number of iterations, by default 100
+        sigma : float, optional
+            scaling factor, by default 0.99
+        rotate : bool, optional
+            whether to allign data to principal components, by default True
+        patience : int, optional
+            maximum number of iterations to wait for an improvement of the error, by default 30
+        """
 
         self.k = k
         self.n_dim = n_dim
@@ -35,7 +56,16 @@ class ManifoldSculpting():
 
         self.scale_factor = 1
 
+        self.patience = patience
+
     def fit(self,data):
+        """find the embedding of given data
+
+        Parameters
+        ----------
+        data : ndarray
+            data to be transformed
+        """
         self.data = data
         # find neighbours, distances and angles
         self.neighbours, self.delta0, self.delta_ave, self.colinear, self.theta0 = self._compute_neighbourhood()
@@ -52,7 +82,6 @@ class ManifoldSculpting():
             self.d_pres = most_important[:self.n_dim]
             self.d_scal = most_important[self.n_dim:]
             self.pca_data = np.copy(self.data)
-        print('keeping',self.d_pres)
 
 
 
@@ -62,31 +91,59 @@ class ManifoldSculpting():
         while self.scale_factor > 0.01:
             mean_error = self._step()
             epoch += 1
-            print(epoch, mean_error,self.learning_rate)
+
+            # uncomment these to save checkpoints
+            # if epoch%10 == 0:
+            #     with objmode:
+            #         fname = f'data/checkpoints/epoch_{epoch}.npy'
+            #         np.save(fname,self.pca_data)
+
+            # print(epoch, mean_error,self.learning_rate)
 
         
         epochs_since_improvement = 0
         best_error = np.inf
         
         # adjust variables until error does not change or reached max iterations
-        while (epoch < self.niter) and (epochs_since_improvement < 50):
+        while (epoch < self.niter) and (epochs_since_improvement < self.patience):
             
-            self._step()
+            mean_error = self._step()
 
             if mean_error < best_error:
                 best_error = mean_error
+                self.best_data = np.copy(self.pca_data)
+                self.best_error = best_error
                 epochs_since_improvement = 0
             else:
                 epochs_since_improvement += 1
 
             epoch += 1
+            # uncomment these to save checkpoints
+            # if epoch%20 == 0:
+            #     with objmode:
+            #         fname = f'data/checkpoints/epoch_{epoch}.npy'
+            #         np.save(fname,self.pca_data)
 
-            print(epoch, mean_error,self.learning_rate)
+            # print(epoch, mean_error,self.learning_rate)
 
         self.elapsed_epochs = epoch
-        print(epoch, epochs_since_improvement,best_error)
+        self.last_error = mean_error
 
     def compute_error(self,p,visited):
+        """compute the error for a given point
+
+        Parameters
+        ----------
+        p : int
+            index of the point
+        visited : list
+            list of already adjusted points
+
+        Returns
+        -------
+        float
+            error for the given point
+        """
         w = np.zeros(self.k)
         # if the neighbour has already been adjusted, weight is 10. 1 otherwise
         for j in range(self.k):
@@ -122,7 +179,7 @@ class ManifoldSculpting():
         N = self.data.shape[0]
        
         x2 = np.sum(self.data*self.data,axis = 1)
-        data_t = self.data.T
+        data_t = np.copy(self.data.T)
         xx = self.data@data_t
         dist = np.sqrt(np.abs(x2.reshape((-1,1))-2*xx+x2))
 
@@ -174,13 +231,20 @@ class ManifoldSculpting():
             data alligned to principal components
         """
         cov = np.cov(self.data.T)
-        eigval,eigvec = np.linalg.eig(cov)
+        eigval,eig = np.linalg.eig(cov)
         index = np.argsort(-eigval)
-        eigvec = eigvec[:,index].astype(np.float32)
+        eigvec = np.copy(eig[:,index].astype(np.float32))
 
         return self.data@eigvec
     
     def _avg_neighbour_distance(self):
+        """compute average distance between neighbours
+
+        Returns
+        -------
+        float
+            average neighbour distance
+        """
         dist = 0
         count = 0
         for p in range(self.pca_data.shape[0]):
@@ -191,31 +255,56 @@ class ManifoldSculpting():
         return dist
     
     def _adjust_point(self,p,visited):
+        """adjust one datapoint
+
+        Parameters
+        ----------
+        p : int
+            index of the point to be adjusted
+        visited : list
+            list of already adjusted points in current epoch
+
+        Returns
+        -------
+        int
+            number of hill descent steps
+        float
+            error for the adjusted point
+        """
         lr = self.learning_rate * np.random.uniform(0.6,1)
         improved = True
 
+        err = self.compute_error(p,visited)
         s = 0
         while (s<30) and improved:
             s+=1
             improved = False
-            err = self.compute_error(p,visited)
 
             for d in self.d_pres:
                 self.pca_data[p,d] += lr
-
                 newerr = self.compute_error(p,visited)
+
                 if newerr >= err:
                     self.pca_data[p,d] -= 2*lr
-
                     newerr = self.compute_error(p,visited)
                 
                 if newerr >= err:
                     self.pca_data[p,d] += lr
                 else:
+                    err = newerr
                     improved = True
         return s-1, err
     
     def _step(self):
+        """perform one step:
+                - scale down dimensions to be removed
+                - scale up other dimensions and adjust points
+
+        Returns
+        -------
+        float
+            mean error after adjustment
+        """
         # get the origin for the breadth first adjust
         origin = np.random.choice(np.array(list(range(self.data.shape[0])),dtype=np.int32))
 
@@ -225,11 +314,11 @@ class ManifoldSculpting():
 
         self.scale_factor *= self.sigma
         # scale down the unwanted dimensions
-        self.pca_data[:,self.d_scal] *= self.scale_factor
+        self.pca_data[:,self.d_scal] *= self.sigma
         # scale up the preserved dimensions to preserve average distance.
-        # (unclear when this is stated in the paper but authors fo this)
+        # (unclear when this is stated in the paper but authors do this)
         while self._avg_neighbour_distance() < self.delta_ave:
-            self.pca_data[:,self.d_pres] /= self.scale_factor
+            self.pca_data[:,self.d_pres] /= self.sigma
 
 
         step = 0
