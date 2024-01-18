@@ -28,7 +28,6 @@
       margin: 0 0.8em 0.2em -1.6em;
       vertical-align: middle;
     }
-    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
   <link rel="stylesheet" href="https://unpkg.com/reveal.js@^4//dist/theme/solarized.css" id="theme">
 </head>
@@ -54,42 +53,41 @@ class="data-autoplay class" style="width:50.0%;height:50.0%" /></p>
 <section id="algorithm" class="title-slide slide level1">
 <h1>Algorithm</h1>
 <pre class="pseudocode"><code>1. Find k-Nearest Neighbours
-2. Compute relations
+2. Compute relationships
 3. Preprocess with PCA
 4. Until convergence
     4a. Scale down dimensions to discard
     4b. Scale up and shift dimensions to keep
 5. Embed by discarding unwanted dimensions</code></pre>
 </section>
-<section id="relations" class="slide level2">
-<h2>Relations</h2>
-<div class="columns">
-<div class="column" style="width:40%;">
+<section id="relationships" class="slide level2">
+<h2>Relationships</h2>
+<div class="columns" data-align="center">
+<div class="column" data-align="center" style="width:40%;">
 <ul>
-<li><span
-class="math inline"><em>δ</em><sub><em>i</em><em>j</em></sub></span>:
-distance</li>
-<li><span
-class="math inline"><em>θ</em><sub><em>i</em><em>j</em></sub></span>:
-angle to most colinear neighbour</li>
+<li>Distance <span class="math inline">\(\delta_{ij}\)</span></li>
+<li>Angle to most colinear neighbour <span
+class="math inline">\(\theta_{ij}\)</span></li>
 </ul>
 </div><div class="column" style="width:60%;">
-<figure>
-<img data-src="" alt="Local relations" />
-<figcaption aria-hidden="true">Local relations</figcaption>
-</figure>
+<p><img data-src="figs/relations.jpeg" /></p>
 </div>
 </div>
+</section>
+<section id="optimisation" class="slide level2">
+<h2>Optimisation</h2>
+<p>Adjust points in order to minimise</p>
+<p><span class="math inline">\(e_i = \sum_j w_{ij}
+\bigg(\bigg(\frac{\delta_{ij}-\delta_{ij0}}{\delta_{ave}} \bigg)^2 +
+\bigg(\frac{\theta_{ij}-\theta_{ij0}}{\pi} \bigg)^2 \bigg)\)</span></p>
 </section></section>
 <section id="parameters" class="title-slide slide level1">
 <h1>Parameters</h1>
 <ul>
-<li class="fragment">Number of neighbours <span
-class="math inline"><em>k</em></span></li>
-<li class="fragment">Scale factor <span
-class="math inline"><em>σ</em></span></li>
-<li class="fragment">Learning rate</li>
-<li class="fragment">Stopping criterion</li>
+<li>Number of neighbours <span class="math inline">\(k\)</span></li>
+<li>Scale factor <span class="math inline">\(\sigma\)</span></li>
+<li>Learning rate</li>
+<li>Stopping criterion</li>
 </ul>
 </section>
 
@@ -140,11 +138,22 @@ id="id" class="class" width="400" height="230" /></p>
 </section></section>
 <section id="comments" class="title-slide slide level1">
 <h1>Comments</h1>
+<div class="columns">
+<div class="column">
+<p><strong>Pros</strong></p>
 <ul>
-<li class="fragment">Accurate</li>
-<li class="fragment">High sensitivity to parameters</li>
-<li class="fragment">Possibly very slow</li>
+<li>Accurate</li>
+<li>Can improve other embeddings</li>
 </ul>
+</div><div class="column">
+<p><strong>Cons</strong></p>
+<ul>
+<li>Hard to tune</li>
+<li>Possibly very slow</li>
+<li>Possible convergence to local minima</li>
+</ul>
+</div>
+</div>
 </section>
     </div>
   </div>
@@ -155,6 +164,7 @@ id="id" class="class" width="400" height="230" /></p>
   <script src="https://unpkg.com/reveal.js@^4//plugin/notes/notes.js"></script>
   <script src="https://unpkg.com/reveal.js@^4//plugin/search/search.js"></script>
   <script src="https://unpkg.com/reveal.js@^4//plugin/zoom/zoom.js"></script>
+  <script src="https://unpkg.com/reveal.js@^4//plugin/math/math.js"></script>
 
   <script>
 
@@ -301,8 +311,26 @@ id="id" class="class" width="400" height="230" /></p>
         // viewDistance in order to save resources.
         mobileViewDistance: 2,
 
+        math: {
+          mathjax: 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js',
+          config: 'TeX-AMS_HTML-full',
+          tex2jax: {
+            inlineMath: [['\\(','\\)']],
+            displayMath: [['\\[','\\]']],
+            balanceBraces: true,
+            processEscapes: false,
+            processRefs: true,
+            processEnvironments: true,
+            preview: 'TeX',
+            skipTags: ['script','noscript','style','textarea','pre','code'],
+            ignoreClass: 'tex2jax_ignore',
+            processClass: 'tex2jax_process'
+          },
+        },
+
         // reveal.js plugins
         plugins: [
+          RevealMath,
           RevealNotes,
           RevealSearch,
           RevealZoom

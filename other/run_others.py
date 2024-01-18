@@ -153,7 +153,7 @@ ax.scatter(y[:,0],y[:,1],c=phi)
 ax.set_title('T-SNE')
 
 ## UMAP
-umap = UMAP(n_neighbors=20)
+umap = UMAP(n_neighbors=40,min_dist=0.5)
 y = umap.fit_transform(roll)
 np.save('../data/umap_embed_hole.npy',y)
 ax = fig.add_subplot(224)

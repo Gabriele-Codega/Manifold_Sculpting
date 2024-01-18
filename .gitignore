@@ -1,8 +1,15 @@
+# module stuff
 __pycache__
 
+# pictures
 figs/
 
+# presentation and interactive python
 pres.md
 *.ipynb
 
+# vscode stuff
 .DS_Store
+
+# tests
+test_nn.py
