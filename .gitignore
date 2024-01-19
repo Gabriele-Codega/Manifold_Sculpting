@@ -1,8 +1,7 @@
 # module stuff
 __pycache__
 
-# presentation and interactive python
-pres.md
+# notebooks
 *.ipynb
 
 # vscode stuff
