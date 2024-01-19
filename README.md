@@ -22,6 +22,8 @@ Note: numba is not strictly necessary and can be avoided by removing the `@jitcl
     - `run_autoencoder.py`: attempt to apply an autoencoder to the swiss roll dataset. Parameters for
     a trained model are available in `autoencoder.pt` but the 2D representation it gives is not very pretty (although the reconstruction error is not bad)
 - `data`: data from original manifold and various embeddings
+- `figs`: plots from some runs of the algorithms
+- `slides.*`: slides for a short presentation (the html looks nicer but possibly won't render).
 
 ## Notes on the implementation
 The algorithm requires many iterations over the data points, which for large datasets can take a very long time with python loops. To speed things up, this code makes use of numba's `@jitclass` decorator. To make the code suitable for numba, some parts are not implemented in the most efficient way. For instance:
