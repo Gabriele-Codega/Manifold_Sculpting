@@ -55,24 +55,24 @@ $e_i = \sum_j w_{ij} \bigg(\bigg(\frac{\delta_{ij}-\delta_{ij0}}{\delta_{ave}} \
 ## Comparison: roll
 ::::::::{.columns}
 :::{.column width=50%}
-![](figs/ms_embed.png){#id .class width=400 height=230px}
-![](figs/tsne_embed.png){#id .class width=400 height=230px}
+![](figs/ms_embed.png){width=0.4\textwidth}
+![](figs/tsne_embed.png){width=0.4\textwidth}
 :::
 :::{.column width=50%}
-![](figs/isomap_embed.png){#id .class width=400 height=230px}
-![](figs/umap_embed.png){#id .class width=400 height=230px}
+![](figs/isomap_embed.png){width=0.4\textwidth}
+![](figs/umap_embed.png){width=0.4\textwidth}
 :::
 ::::::::
 
 ## Comparison: hole
 ::::::::{.columns}
 :::{.column width=50%}
-![](figs/ms_embed_hole.png){#id .class width=400 height=230px}
-![](figs/tsne_embed_hole.png){#id .class width=400 height=230px}
+![](figs/ms_embed_hole.png){width=0.4\textwidth}
+![](figs/tsne_embed_hole.png){width=0.4\textwidth}
 :::
 :::{.column width=50%}
-![](figs/isomap_embed_hole.png){#id .class width=400 height=230px}
-![](figs/umap_embed_hole.png){#id .class width=400 height=230px}
+![](figs/isomap_embed_hole.png){width=0.4\textwidth}
+![](figs/umap_embed_hole.png){width=0.4\textwidth}
 :::
 ::::::::
 
